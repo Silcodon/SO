@@ -1,0 +1,3 @@
+Evento ocorreu as:21:40:10
+Armazem[5979] terminou as:21:40:11
+Evento terminou as:21:40:11
