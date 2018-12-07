@@ -1,5 +1,4 @@
 #include "header.h"
-#include "drone_movement.h"
 
 
 Config cf;
@@ -11,8 +10,7 @@ int fd;
 pid_t armazens[MAX_ARMAZENS];
 int n_produtos=0;
 Encomenda pedidos[MAX];
-
-
+Encomenda pedidos_suspensos[MAX];
 pid_t id_centr,getid;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 sem_t *sem_esta;
@@ -327,12 +325,107 @@ int ler_comando(char comando[BUF_SIZE]){
 
 }
 
+int verifica_pedido(Encomenda pedido){
+	int i,id_arm;
+	int ids[MAX_ARMAZENS];
+	int existe=0;
+	int k=0;
+	for(id_arm=0;id_arm<cf.n_armazens;id_arm++){
+		for(i=0;i<n_produtos;i++){
+			if(strcmp(mp->arm[id_arm]->produto[i].nome,pedido.produto->nome)==0){
+				existe=1;
+				ids[k]=id_arm;
+				k++;
+				}
+			}
+		}
+	if(existe==1){
+		for(i=0;i<k;i++){
+			id_arm=ids[k];
+			if(mp->arm[id_arm]->produto[i].quantidade>=pedido.produto->quantidade){
+				return 0;
+				}
+			else{
+				existe=0;
+				}
+			}
+		if(existe==0){
+			return -1;
+		}
+	}
+	else{
+		return -1;
+	}
+
+	return 1;
+
+}
+
+
+int avalia_distancia(Drone drones_ativo[],Encomenda pedido){
+	int i,id_arm;
+	Armazem com_prod[MAX_ARMAZENS];
+	int ids[MAX_ARMAZENS];
+	int existe=0;
+	int k=0;
+	int j=0;
+	int dist;
+	int dist_armazem;
+	int dist_destino;
+	int menor=MAX;
+	int id_drone;
+	sem_wait(sem_esta);
+	//Armazens com produto e quantidade necessaria
+	for(id_arm=0;id_arm<cf.n_armazens;id_arm++){
+		for(i=0;i<n_produtos;i++){
+			if(strcmp(mp->arm[id_arm]->produto[i].nome,pedido.produto->nome)==0){
+				existe=1;
+				ids[k]=id_arm;
+				k++;
+				}
+			}
+		}
+	if(existe==1){
+		for(i=0;i<k;i++){
+			id_arm=ids[k];
+			if(mp->arm[id_arm]->produto[i].quantidade>=pedido.produto->quantidade){
+					memcpy(&com_prod[j],&mp->arm[id_arm],sizeof(Armazem));
+					j++;
+				}
+			}
+		}
+	//Avaliar distancia
+	for(i=0;i<cf.n_drones;i++){
+		if(drones_ativo[i].estado==FALSE){ //Drone Inativo
+		for(j=0;i<-cf.n_armazens;i++){
+			dist_armazem=distance(drones_ativo[i].posicao.x,drones_ativo[i].posicao.y,com_prod[j].local.x,com_prod[j].local.y);
+			dist_destino=distance(com_prod[j].local.x,com_prod[j].local.y,pedido.destino.x,pedido.destino.y);
+			dist=dist_armazem+dist_destino;
+			if(dist<menor){
+				menor=dist;
+				id_drone=i;
+				}
+			}
+		}
+		else{ //Drone ativo
+			continue;
+		}	
+	}
+	sem_post(sem_esta);
+	return id_drone;
+
+
+}
+
 void Central(){
 	pthread_t drones[cf.n_drones];	
 	char command[BUF_SIZE],command_log[BUF_SIZE];
 	int ORDER_NO=0;
-	//Drone drone_ativo[cf.n_drones]=malloc(cf.n_drones*sizeof(Drone));
+	Drone drones_ativo[cf.n_drones];
+	int k=0;
+	int suspenso=0;
 	int id[cf.n_drones];
+	int id_drone;
 	int i;//menor,j,id_drone,dist;
 	//menor=MAX;
 	sem_wait(sem_esta);
@@ -388,8 +481,29 @@ void Central(){
 			close(fd);
 			printf("Ordem recebida!");
 			ORDER_NO++;
-			pedidos[ORDER_NO]=faz_encomenda(command_log);
-			//Mandar comando
+			k++;
+			//Criar pedido
+			pedidos[k]=faz_encomenda(command_log);
+			pedidos[k].num=ORDER_NO;
+			//Verificar produtos no armazem
+			//Caso existe
+			sem_wait(sem_esta);
+			if(verifica_pedido(pedidos[ORDER_NO])==0){
+				sem_post(sem_esta);
+				//id do drone mais proximo do destino
+				id_drone=avalia_distancia(drones_ativo,pedidos[ORDER_NO]);
+			}
+			//Caso não exista ou não haja quantidade suficiente
+			else if(verifica_pedido(pedidos[ORDER_NO])==-1){
+				sem_post(sem_esta);
+				suspenso++;
+				pedidos_suspensos[suspenso]=pedidos[k];
+				k--;
+			}
+			//Em caso de erro
+			else if(verifica_pedido(pedidos[ORDER_NO])==1){
+				perror("Erro na verificação do pedido.");
+			}
 		}
 	}
 

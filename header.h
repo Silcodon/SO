@@ -14,9 +14,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <time.h>
-#include "drone_movement.h"
+#include "drone_movement.c"
 #include <math.h>
 #include <sys/msg.h>
+#define TRUE 1
+#define FALSE 0
 
 #define BUF_SIZE 1024
 #define PIPE_NAME "input_pipe"
@@ -54,10 +56,10 @@ typedef struct{
 }Encomenda;
 
 typedef struct{
-	Coordenadas *posicao;
-	int *id;
-	bool *estado;
-	Coordenadas *destino;
+	Coordenadas posicao;
+	int id;
+	bool estado; //FALSE=inativo  TRUE=ativo
+	Coordenadas destino;
 
 }Drone;
 	
